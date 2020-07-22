@@ -274,43 +274,94 @@ module.exports = function (schema, option) {
     return render;
   }
 
+  const styleFilter = (style) => {
+    const extraClasses = [],
+      newStyle = {},
+      flexKeys = ['display', 'alignItems', 'flexDirection', 'justifyContent', 'flexWrap', 'flex']
+    if (style) {
+      _.forEach(style, (value, key) => {
+        if (flexKeys.includes(key)) {
+          const str = `${_.kebabCase(key)}: ${value}`
+          const obj = {
+            'display: flex': 'flex',
+            'flex: 1': 'flex-1',
+            'flex-direction: column': 'column',
+            'flex-wrap: wrap': 'wrap',
+            'align-items: flex-end': 'item-end',
+            'align-items: center': 'item-center',
+            'align-items: baseline': 'item-baseline',
+            'align-items: stretch': 'item-stretch',
+            'justify-content: flex-end': 'content-end',
+            'justify-content: center': 'content-center',
+            'justify-content: space-between': 'content-between',
+            'justify-content: space-around': 'content-around',
+          }
+          if (obj[str]) {
+            extraClasses.push(obj[str])
+          } else {
+            const exclude = ['flex-direction: row', 'align-items: flex-start', 'justify-content: flex-start']
+            if (!exclude.includes(str)) {
+              newStyle[key] = value
+            }
+          }
+        } else {
+          const str = `${_.kebabCase(key)}: ${value}`;
+          const exclude = ['white-space: pre-wrap', 'font-weight: 400', 'font-size: 14px', 'color: #333333']
+          if (!exclude.includes(str)) {
+            newStyle[key] = value
+          }
+        }
+      })
+    }
+    return { extraClasses, newStyle }
+  }
+
   // generate render xml
   const generateRender = (schema) => {
     const type = schema.componentName.toLowerCase();
-    const className = schema.props && schema.props.className;
-    let classString = '';
+    const className = _.get(schema.props, 'className');
 
-    if (className) {
-      classString = ` class="${className}"`
+    const { extraClasses, newStyle } = styleFilter(_.get(schema.props, 'style'));
+    const classList = [].concat(extraClasses)
+    _.set(schema.props, 'style', newStyle);
+
+    let classString = '', styleString = '';
+
+    if (className && !_.isEmpty(newStyle)) {
       styles.push(`
         .${className} {
-          ${parseStyle(schema.props.style)}
+          ${parseStyle(newStyle)}
         }
       `);
-    } else if (schema.props.style) {
-      classString = ` style="${parseStyle(schema.props.style)}"`
+      classList.push(className)
+    } else if (!_.isEmpty(newStyle)) {
+      styleString = ` style="${parseStyle(schema.props.style)}"`
+    }
+
+    if (classList.length) {
+      classString = ` class="${classList.join(' ')}"`
     }
 
     let xml;
     let props = '';
 
     Object.keys(schema.props).forEach((key) => {
-      if (['className', 'style', 'text', 'src'].indexOf(key) === -1) {
+      if (!['className', 'style', 'text', 'src', 'lines'].includes(key)) {
         props += ` ${parsePropsKey(key, schema.props[key])}=${parseProps(schema.props[key])}`;
       }
     })
     switch (type) {
       case 'text':
         const innerText = parseProps(schema.props.text, true);
-        xml = `<text${classString}${props}>${innerText}</text> `;
+        xml = `<text${classString}${styleString}${props}>${innerText}</text> `;
         break;
       case 'image':
         let source = parseProps(schema.props.src, false);
         if (!source.match('"')) {
           source = `"${source}"`;
-          xml = `<image${classString}${props} :src=${source} mode="widthFix"/> `;
+          xml = `<image${classString}${styleString}${props} :src=${source} mode="aspectFill"/> `;
         } else {
-          xml = `<image${classString}${props} src=${source} mode="widthFix"/> `;
+          xml = `<image${classString}${styleString}${props} src=${source} mode="aspectFill"/> `;
         }
         break;
       case 'div':
@@ -318,16 +369,16 @@ module.exports = function (schema, option) {
       case 'block':
       case 'component':
         if (schema.children && schema.children.length) {
-          xml = `<div${classString}${props}>${transform(schema.children)}</div>`;
+          xml = `<div${classString}${styleString}${props}>${transform(schema.children)}</div>`;
         } else {
-          xml = `<div${classString}${props}/>`;
+          xml = `<div${classString}${styleString}${props}/>`;
         }
         break;
       default:
         if (schema.children && schema.children.length) {
-          xml = `<div${classString}${props}>${transform(schema.children)}</div>`;
+          xml = `<div${classString}${styleString}${props}>${transform(schema.children)}</div>`;
         } else {
-          xml = `<div${classString}${props}/>`;
+          xml = `<div${classString}${styleString}${props}/>`;
         }
     }
 
@@ -336,7 +387,6 @@ module.exports = function (schema, option) {
     }
     if (schema.condition) {
       xml = parseCondition(schema.condition, xml);
-      // console.log(xml);
     }
     return xml || '';
   }
